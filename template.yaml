@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  sam-kanban
+
+  Sample SAM Template for sam-kanban
+
+# More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
+Globals:
+  Api:
+    OpenApiVersion: 3.0.1
+  Function:
+    Timeout: 3
+    Handler: app.handler #해당 위치에서 실행할 js파일이름.함수이름
+    Runtime: nodejs12.x
+    Layers:
+      - !Ref XrayLayer #내장함수 문법 !Ref -> 런타임 실행시에 해당 리소스의 ARN반환됨
+
+Resources:
+  DynamoDB:
+    Type: AWS::Serverless::SimpleTable
+    Properties:
+      PrimaryKey:
+        Name: id
+        Type: String
+      TableName: Cards
+
+  APIGateway:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: Kanban API Gateway
+      StageName: prod
+      TracingEnabled: true
+      MethodSettings: #로그 추적관련
+        - HttpMethod: "*"
+          LoggingLevel: INFO
+          ResourcePath: "/*"
+      Cors:
+        AllowMethods: "'*'"
+        AllowHeaders: "'*'"
+        AllowOrigin: "'*'"
+      Auth:
+        UsagePlan:
+          CreateUsagePlan: PER_API
+          Description: Usage plan for this API
+          Quota:
+            Limit: 500
+            Period: DAY
+          Throttle:
+            BurstLimit: 10
+            RateLimit: 10
+      EndpointConfiguration: REGIONAL
+
+  XrayLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      CompatibleRuntimes:
+        - nodejs12.x
+      ContentUri: layer/xraysdk
+      Description: Kanban board X-ray SDK layer
+      LayerName: XraySDK
+      RetentionPolicy: Retain
+
+  GetCardsFunction:
+    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Properties:
+      FunctionName: GetCards
+      CodeUri: lambda/getcards #파일위치 폴더
+      Role: arn:aws:iam::553973198553:role/Lambda_Kanban_Role
+      Events:
+        Trigger:
+          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+          Properties:
+            Path: /kanban/cards
+            Method: get
+            Auth:
+              ApiKeyRequired: true
+            RestApiId: !Ref APIGateway
+
+Outputs:
+  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
+  # Find out more about other implicit resources you can reference within SAM
+  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
+  APIGateway:
+    Description: "API Gateway endpoint URL for Prod stage for Kanban project"
+    Value: !Sub "https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/prod" #Sub 대체한다 ${} 는 해당 리소스이름
+  APIKey:
+    Description: API Key ID"
+    Value: !Ref APIGatewayApiKey
